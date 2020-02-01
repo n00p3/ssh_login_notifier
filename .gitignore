@@ -1,1 +1,5 @@
 notifier.log
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+__pycache__/test_basic.cpython-37.pyc
+__pycache__/ssh_login_notifier.cpython-37.pyc
