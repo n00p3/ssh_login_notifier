@@ -7,6 +7,7 @@ import logging
 import re
 import datetime
 
+
 class Event:
     """
     Event class.
@@ -80,6 +81,7 @@ def prepare_logging(config):
                         level=logging.INFO,
                         format='%(name)s - %(levelname)s - %(message)s')
 
+
 def event_parser(timestamp, message) -> list:
     """
     Reads event and returns its types.
@@ -131,6 +133,7 @@ def filter_events(events, config) -> list:
 
     return ret
 
+
 if __name__ == '__main__':
     startTimestamp = datetime.datetime.now()
 
@@ -157,11 +160,11 @@ if __name__ == '__main__':
             ev_objs = event_parser(event['SYSLOG_TIMESTAMP'], event['MESSAGE'])
             ev_objs = filter_events(ev_objs, config)
             if len(ev_objs) > 0:
-                logging.info('===================================================')
+                logging.info('================================================')
                 logging.info('new Events:')
                 for ev in ev_objs:
                     logging.info(ev)
-                logging.info('===================================================')
+                logging.info('================================================')
     except Exception as e:
         p.unregister(j)
         logging.info(e)
