@@ -6,18 +6,21 @@ import yaml
 import logging
 import re
 import datetime
+import smtplib
+import platform
 
 
 class Event:
     """
     Event class.
     If `type` is falsy, then `ip` and `user` should be `None`.
+
     Args:
-    e_type    (str?): Type of event. Accepted types: 
-                      None, 'auth_fail', 'auth_success'.
-    ip        (str?): IP of client.
-    user      (str?): Used login.
-    timestamp (str):  Timestamp of event.
+        e_type    (str?): Type of event. Accepted types: 
+                          None, 'auth_fail', 'auth_success'.
+        ip        (str?): IP of client.
+        user      (str?): Used login.
+        timestamp (str):  Timestamp of event.
     """
     def __init__(self, e_type, ip, user, timestamp):
         if e_type not in [None, 'auth_fail', 'auth_success']:
@@ -56,7 +59,7 @@ def read_config(path='./config.yml') -> dict:
     Reads yaml config file, by default in the same directory as this .py file.
 
     Args:
-    path (str): Path to config file.
+        path (str): Path to config file.
     """
     with open(path) as file:
         config = yaml.load(file, Loader=yaml.FullLoader)
@@ -69,7 +72,7 @@ def prepare_logging(config):
     Setups logging.
 
     Args:
-    config (dict): Config dictionary.
+        config (dict): Config dictionary.
     """
 
     log_file = config['configuration']['log_file']
@@ -87,51 +90,101 @@ def event_parser(timestamp, message) -> list:
     Reads event and returns its types.
 
     Args:
-    timestamp (datetime): Timestamp of event.
-    message   (str):      Log message to parse.
+        timestamp (datetime): Timestamp of event.
+        message   (str):      Log message to parse.
 
     Returns: `Event` object
     """
-    events = []
+    event = Event(None, None, None, datetime.datetime.now())
     re_fail    = re.compile(r'.*Failed password for \w+ from .*$')
     re_success = re.compile(r'.*Accepted password for \w+ from .*$')
     for line in message.split('\n'):
         if re_fail.fullmatch(line):
             user     = line.split()[5]
             ip       = line.split()[3]
-            events.append(Event('auth_fail',    user, ip, timestamp))
+            event =  Event('auth_fail',    user, ip, timestamp)
         elif re_success.fullmatch(line):
             user     = line.split()[5]
             ip       = line.split()[3]
-            events.append(Event('auth_success', user, ip, timestamp))
-    return events
+            event =  Event('auth_success', user, ip, timestamp)
+    
+    return event
 
 
-def filter_events(events, config) -> list:
+def filter_event(event, config) -> list:
     """
-    Discards disabled events and None type events.
+    Discards disabled events, None type and whitelisted IP events.
 
     Args:
-    events (list): List of `Event` objects.
-    config (dict): Config file.
+        event  (Event): Event.
+        config (dict): Config file.
 
     Returns:
-    List of enabled events.
+        List of enabled events.
     """
 
     auth_fail    = config['notifications']['auth_fail']   ['enable']
     auth_success = config['notifications']['auth_success']['enable']
+    whitelist    = config['whitelist']
 
-    ret = []
+    if event.ip in whitelist:
+        return None
 
-    # If auth_fail is enabled, then add it to the list.
-    if auth_fail:
-        ret.extend([event for event in events if event.type == 'auth_fail'])
+    if auth_fail and event.type == 'auth_fail':
+        return event
 
-    if auth_success:
-        ret.extend([event for event in events if event.type == 'auth_success'])
+    if auth_success and event.type == 'auth_success':
+        return event
 
-    return ret
+    return None
+
+
+def replace_special_vars(event, email):
+    """
+    Replaces $IP, $USER and $MACHINE
+
+    Args:
+        event (Event): Event with data to replace email content.
+        email (str):   Message or subject content.
+    """
+    email = email.replace('$IP',      event.ip)
+    email = email.replace('$USER',    event.user)
+    email = email.replace('$MACHINE', platform.node())
+
+    return email
+
+def send_message(event, config):
+    """
+    Send an email message.
+
+    Args:
+        event  (Event): Event.
+        config (dict):  Config dictionary.
+
+    Returns:
+        Boolean.
+    """
+    try:
+        server  = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.ehlo()
+
+        me      = config['emails']['source_email']['address']
+        passwd  = config['emails']['source_email']['password']
+        targets = config['emails']['target_emails']
+
+        subject = config['notifications'][event.type]['subject']
+        message = config['notifications'][event.type]['message']
+
+        subject = replace_special_vars(event, subject)
+        message = replace_special_vars(event, message)
+
+        server.login(me, passwd)
+        server.sendmail(me, targets, f'Subject: {subject}\n\n{message}')
+        server.close()
+
+        logging.info('Email sent!')
+    except Exception as e:
+        logging.info(f'Error sending email... {e}')
 
 
 if __name__ == '__main__':
@@ -155,15 +208,15 @@ if __name__ == '__main__':
         while True:
             event = j.get_next()
             time.sleep(float(config['configuration']['polling_freq']))
-            if 'SYSLOG_TIMESTAMP' not in event:
+            if 'SYSLOG_TIMESTAMP' not in event or 'MESSAGE' not in event:
                 continue
-            ev_objs = event_parser(event['SYSLOG_TIMESTAMP'], event['MESSAGE'])
-            ev_objs = filter_events(ev_objs, config)
-            if len(ev_objs) > 0:
+            ev_obj = event_parser(event['SYSLOG_TIMESTAMP'], event['MESSAGE'])
+            ev_obj = filter_event(ev_obj, config)
+            if ev_obj:
                 logging.info('================================================')
-                logging.info('new Events:')
-                for ev in ev_objs:
-                    logging.info(ev)
+                logging.info('new Event:')
+                logging.info(ev_obj)
+                send_message(ev_obj, config)
                 logging.info('================================================')
     except Exception as e:
         p.unregister(j)

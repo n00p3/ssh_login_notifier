@@ -2,27 +2,31 @@
 # fields you need to fill.
 emails:
   # Email that will be used to send emails. Tested with gmail.
+  # https://support.google.com/accounts/answer/185833
   source_email:
-    address: login
+    address: sample@gmail.com
     password: pass
 
   # List of email addresses that should receive info.
   target_emails:
-    - sample@gmail.com
+    - target@gmail.com
 
 # Enabling specific events and changing messages.
-# You can use 2 special variables: $IP and $USER, self explanatory.
+# You can use 3 special variables: $IP, $USER and $MACHINE, self explanatory.
 notifications:
   auth_fail:
-    enable: true
+    enable:  true
+    subject: Failed login attempt on machine $MACHINE.
     message: Failed login attempt from $IP for user $USER.
   auth_success: 
-    enable: true
+    enable:  true
+    subject: Successful login attempt on machine $MACHINE.
     message: Successful login from $IP for user $USER.
 
 
 # List of IPs that would not trigger any events.
 whitelist: []
+  # - 127.0.0.1
 
 # Internal config, you probably shouldn't change anything here.
 configuration:
@@ -30,10 +34,4 @@ configuration:
   polling_freq: 0.1
 
   # Path to log file. If empty, `./notifier.log` will be used.
-  log_file: #./notifier.log
-
-  # Should script write to COUT?
-  enable_cout_log: true
-  
-  # Should script write to `log_file`?
-  enable_file_log: true
+  log_file: ./notifier.log
